@@ -31,7 +31,7 @@ fn manage(filepath: &str) {
 
         let cartridges_parent_path = cartridge_parent_path_vec.join("/");
 
-        println!("Uploading [{}]", name);
+        println!("Zipping, uploading and unzipping: [{}]", name);
 
         let _out = Command::new("sh")
             .current_dir(&cartridges_parent_path)
@@ -52,6 +52,7 @@ fn manage(filepath: &str) {
                     Ok(DebouncedEvent::Write(path)) | Ok(DebouncedEvent::Create(path)) => {
                         let sanitized_webdav_path = directories::sanitize_webdav_path(path.to_str().unwrap());
 
+                        println!("[ADDITION/CHANGE] Uploading: [{}]", sanitized_webdav_path);
                         if sanitized_webdav_path.contains(".") {
                             webdav_client_clone.upload_file(
                                 path.to_str().unwrap(),
@@ -63,6 +64,7 @@ fn manage(filepath: &str) {
                     },
                     Ok(DebouncedEvent::Remove(path)) => {
                         let sanitized_webdav_path = directories::sanitize_webdav_path(path.to_str().unwrap());
+                        println!("[DELETION] Deleting [{}]", sanitized_webdav_path);
                         webdav_client_clone.delete(&sanitized_webdav_path);
                     },
                     Ok(_event) => {},

@@ -50,9 +50,7 @@ impl WebdavClient {
             .basic_auth(self.config.as_ref().unwrap().username.clone(), Some(self.config.as_ref().unwrap().password.clone()))
             .body(file_fd)
             .send()
-            .unwrap()
-            .text()
-            .unwrap();
+            .expect("Problem with sending upload file request");
     }
 
     pub fn unzip_zip(&self, zip_name: &str) {
@@ -65,9 +63,7 @@ impl WebdavClient {
             .basic_auth(self.config.as_ref().unwrap().username.clone(), Some(self.config.as_ref().unwrap().password.clone()))
             .form(&form_data)
             .send()
-            .unwrap()
-            .text()
-            .unwrap();
+            .expect("Problem with sending unzipping file request");
     }
 
     pub fn delete(&self, path: &str) {
@@ -77,9 +73,7 @@ impl WebdavClient {
         let _delete_response = client.delete(&url)
             .basic_auth(self.config.as_ref().unwrap().username.clone(), Some(self.config.as_ref().unwrap().password.clone()))
             .send()
-            .unwrap()
-            .text()
-            .unwrap();
+            .expect("Problem with sending delete file request");
     }
 
     pub fn create_directory(&self, directory_path: &str) {
@@ -89,9 +83,7 @@ impl WebdavClient {
         let _response = client.request(reqwest::Method::from_bytes(b"MKCOL").expect("Could not generate MKCOL method"), url)
             .basic_auth(self.config.as_ref().unwrap().username.clone(), Some(self.config.as_ref().unwrap().password.clone()))
             .send()
-            .unwrap()
-            .text()
-            .unwrap();
+            .expect("Problem with creating folder request");
     }
 
     pub fn send_cartridge(&self, cartridges_parent_path: &str, name: &str) {
