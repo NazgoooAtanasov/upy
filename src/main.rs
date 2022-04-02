@@ -11,7 +11,7 @@ mod webdav;
 mod parser;
 mod directories;
 
-async fn manage(filepath: &str) {
+fn manage(filepath: &str) {
     let path = std::path::Path::new(filepath);
 
     let mut webdav_client = webdav::WebdavClient::new();
@@ -39,12 +39,12 @@ async fn manage(filepath: &str) {
             .arg(format!("zip {}.zip {} -r", name, name))
             .output();
 
-        webdav_client.send_cartridge(&cartridges_parent_path, &name).await;
+        webdav_client.send_cartridge(&cartridges_parent_path, &name);
 
         let webdav_client_clone = webdav_client.clone();
         let thread = std::thread::spawn(move || {
             let (tx, rx) = channel();
-            let mut watcher = watcher(tx, Duration::from_secs(0)).unwrap();
+            let mut watcher = watcher(tx, Duration::from_secs(1)).unwrap();
             watcher.watch(path, RecursiveMode::Recursive).unwrap();
 
             loop {
@@ -53,7 +53,7 @@ async fn manage(filepath: &str) {
                         let sanitized_webdav_path = directories::sanitize_webdav_path(path.to_str().unwrap());
 
                         if sanitized_webdav_path.contains(".") {
-                            webdav_client_clone.upload_file_blocking(
+                            webdav_client_clone.upload_file(
                                 path.to_str().unwrap(),
                                 &sanitized_webdav_path
                             );
@@ -62,7 +62,8 @@ async fn manage(filepath: &str) {
                         }
                     },
                     Ok(DebouncedEvent::Remove(path)) => {
-                        webdav_client_clone.delete(&directories::sanitize_webdav_path(path.to_str().unwrap()));
+                        let sanitized_webdav_path = directories::sanitize_webdav_path(path.to_str().unwrap());
+                        webdav_client_clone.delete(&sanitized_webdav_path);
                     },
                     Ok(_event) => {},
                     Err(e) => println!("err {:?}", e)
@@ -78,10 +79,9 @@ async fn manage(filepath: &str) {
     }
 }
 
-#[tokio::main]
-async fn main() {
+fn main() {
     let args: Vec<String> = std::env::args().collect();
     let filepath = &args[1];
 
-    manage(filepath).await;
+    manage(filepath);
 }
