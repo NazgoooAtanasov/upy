@@ -32,15 +32,19 @@ impl WebdavClient {
         });
     }
 
-    pub fn upload_file(&self, system_file_path: &str, file: &str) {
-        let file_fd = File::open(system_file_path).unwrap();
-
-        let url = format!(
+    fn generate_url(&self, path: &str) -> String {
+        format!(
             "https://{}/on/demandware.servlet/webdav/Sites/Cartridges/{}/{}",
             self.config.as_ref().unwrap().hostname,
             self.config.as_ref().unwrap().version,
-            file
-        );
+            path
+        )
+    }
+
+    pub fn upload_file(&self, system_file_path: &str, file: &str) {
+        let file_fd = File::open(system_file_path).unwrap();
+
+        let url = self.generate_url(file);
 
         let _res = self.reqwest_client.put(url)
             .basic_auth(self.config.as_ref().unwrap().username.clone(), Some(self.config.as_ref().unwrap().password.clone()))
@@ -55,12 +59,7 @@ impl WebdavClient {
         let mut form_data = std::collections::HashMap::new();
         form_data.insert("method", "UNZIP");
 
-        let url = format!(
-            "https://{}/on/demandware.servlet/webdav/Sites/Cartridges/{}/{}",
-            self.config.as_ref().unwrap().hostname,
-            self.config.as_ref().unwrap().version,
-            zip_name
-        );
+        let url = self.generate_url(zip_name);
 
         let _unzip_response = self.reqwest_client.post(url)
             .basic_auth(self.config.as_ref().unwrap().username.clone(), Some(self.config.as_ref().unwrap().password.clone()))
@@ -72,12 +71,7 @@ impl WebdavClient {
     }
 
     pub fn delete(&self, path: &str) {
-        let url = format!(
-            "https://{}/on/demandware.servlet/webdav/Sites/Cartridges/{}/{}",
-            self.config.as_ref().unwrap().hostname,
-            self.config.as_ref().unwrap().version,
-            path
-        );
+        let url = self.generate_url(path);
 
         let client = reqwest::blocking::Client::new();
         let _delete_response = client.delete(&url)
@@ -89,12 +83,7 @@ impl WebdavClient {
     }
 
     pub fn create_directory(&self, directory_path: &str) {
-        let url = format!(
-            "https://{}/on/demandware.servlet/webdav/Sites/Cartridges/{}/{}",
-            self.config.as_ref().unwrap().hostname,
-            self.config.as_ref().unwrap().version,
-            directory_path
-        );
+        let url = self.generate_url(directory_path);
 
         let client = reqwest::blocking::Client::new();
         let _response = client.request(reqwest::Method::from_bytes(b"MKCOL").expect("Could not generate MKCOL method"), url)
