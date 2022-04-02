@@ -1,9 +1,9 @@
 use crate::parser;
 use serde::Deserialize;
-use tokio::fs::File;
+use std::fs::File;
 use tokio_util::codec::{BytesCodec, FramedRead};
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct Config {
     pub hostname: String,
     pub username: String, 
@@ -11,6 +11,7 @@ pub struct Config {
     pub version: String
 }
 
+#[derive(Clone)]
 pub struct WebdavClient {
     pub config: Option<Config>,
     pub reqwest_client: reqwest::Client
@@ -32,17 +33,38 @@ impl WebdavClient {
         });
     }
 
-    pub async fn upload_file(&self, system_file_path: &str, zip_file_name: &str) {
-        let file = File::open(system_file_path).await.unwrap();
+    pub fn upload_file_blocking(&self, system_file_path: &str, file: &str) {
+        let file_fd = File::open(system_file_path).unwrap();
 
-        let stream = FramedRead::new(file, BytesCodec::new());
+        let url = format!(
+            "https://{}/on/demandware.servlet/webdav/Sites/Cartridges/{}/{}",
+            self.config.as_ref().unwrap().hostname,
+            self.config.as_ref().unwrap().version,
+            file
+        );
+
+        let client = reqwest::blocking::Client::new();
+        let _res = client.put(url)
+            .basic_auth(self.config.as_ref().unwrap().username.clone(), Some(self.config.as_ref().unwrap().password.clone()))
+            .body(file_fd)
+            .send()
+            .unwrap()
+            .text()
+            .unwrap();
+    }
+
+    // delete in the future
+    pub async fn upload_file(&self, system_file_path: &str, file: &str) {
+        let file_fd = tokio::fs::File::open(system_file_path).await.unwrap();
+
+        let stream = FramedRead::new(file_fd, BytesCodec::new());
         let body = reqwest::Body::wrap_stream(stream);
 
         let url = format!(
-            "https://{}/on/demandware.servlet/webdav/Sites/Cartridges/{}/{}.zip",
+            "https://{}/on/demandware.servlet/webdav/Sites/Cartridges/{}/{}",
             self.config.as_ref().unwrap().hostname,
             self.config.as_ref().unwrap().version,
-            zip_file_name
+            file
         );
 
         let _upload_response = self.reqwest_client.put(url)
@@ -78,6 +100,7 @@ impl WebdavClient {
             .unwrap();
     }
 
+    // delete in the future
     pub async fn delete_zip(&self, zip_name: &str) {
         let url = format!(
             "https://{}/on/demandware.servlet/webdav/Sites/Cartridges/{}/{}",
@@ -96,9 +119,51 @@ impl WebdavClient {
             .unwrap();
     }
 
+    pub fn delete(&self, path: &str) {
+        let url = format!(
+            "https://{}/on/demandware.servlet/webdav/Sites/Cartridges/{}/{}",
+            self.config.as_ref().unwrap().hostname,
+            self.config.as_ref().unwrap().version,
+            path
+        );
+
+        let client = reqwest::blocking::Client::new();
+        let _delete_response = client.delete(&url)
+            .basic_auth(self.config.as_ref().unwrap().username.clone(), Some(self.config.as_ref().unwrap().password.clone()))
+            .send()
+            .unwrap()
+            .text()
+            .unwrap();
+    }
+
+    pub fn create_directory(&self, directory_path: &str) {
+        let url = format!(
+            "https://{}/on/demandware.servlet/webdav/Sites/Cartridges/{}/{}",
+            self.config.as_ref().unwrap().hostname,
+            self.config.as_ref().unwrap().version,
+            directory_path
+        );
+
+        let client = reqwest::blocking::Client::new();
+        let _response = client.request(reqwest::Method::from_bytes(b"MKCOL").expect("Could not generate MKCOL method"), url)
+            .basic_auth(self.config.as_ref().unwrap().username.clone(), Some(self.config.as_ref().unwrap().password.clone()))
+            .send()
+            .unwrap()
+            .text()
+            .unwrap();
+    }
+
     pub async fn send_cartridge(&self, cartridges_parent_path: &str, name: &str) {
-        self.upload_file(format!("{}/{}.zip", &cartridges_parent_path, name).as_str(), &name).await;
+        self.upload_file(
+            format!("{}/{}.zip",
+                &cartridges_parent_path,
+                name
+            ).as_str(),
+            format!("{}.zip", &name).as_str()
+        ).await;
+
         self.unzip_zip(format!("{}.zip", &name).as_str()).await;
+
         self.delete_zip(format!("{}.zip", &name).as_str()).await;
     }
 }

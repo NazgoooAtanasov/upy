@@ -38,3 +38,21 @@ pub fn walk_directories(path: &std::path::Path, cartridges_metadata: &mut HashMa
 
     Ok(())
 }
+
+pub fn sanitize_webdav_path(system_file_path: &str) -> String {
+    let system_file_path_split: Vec<&str> = system_file_path.split("/").collect();
+
+    let index = system_file_path_split.iter().rev().position(|&x| x == "cartridge").unwrap();
+
+    let webdav_path: String  = 
+        system_file_path_split
+        .into_iter()
+        .rev()
+        .take(index + 2)
+        .rev()
+        .collect::<Vec<&str>>()
+        .join("/")
+        .replace("~", "");
+
+    webdav_path
+}
