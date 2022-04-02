@@ -44,17 +44,16 @@ impl WebdavClient {
         );
 
         let client = reqwest::blocking::Client::new();
-        let res = client.put(url)
+        let _res = client.put(url)
             .basic_auth(self.config.as_ref().unwrap().username.clone(), Some(self.config.as_ref().unwrap().password.clone()))
             .body(file_fd)
             .send()
             .unwrap()
             .text()
             .unwrap();
-
-        println!("{}", res);
     }
 
+    // delete in the future
     pub async fn upload_file(&self, system_file_path: &str, file: &str) {
         let file_fd = tokio::fs::File::open(system_file_path).await.unwrap();
 
@@ -101,6 +100,7 @@ impl WebdavClient {
             .unwrap();
     }
 
+    // delete in the future
     pub async fn delete_zip(&self, zip_name: &str) {
         let url = format!(
             "https://{}/on/demandware.servlet/webdav/Sites/Cartridges/{}/{}",
@@ -116,6 +116,23 @@ impl WebdavClient {
             .unwrap()
             .text()
             .await
+            .unwrap();
+    }
+
+    pub fn delete(&self, path: &str) {
+        let url = format!(
+            "https://{}/on/demandware.servlet/webdav/Sites/Cartridges/{}/{}",
+            self.config.as_ref().unwrap().hostname,
+            self.config.as_ref().unwrap().version,
+            path
+        );
+
+        let client = reqwest::blocking::Client::new();
+        let _delete_response = client.delete(&url)
+            .basic_auth(self.config.as_ref().unwrap().username.clone(), Some(self.config.as_ref().unwrap().password.clone()))
+            .send()
+            .unwrap()
+            .text()
             .unwrap();
     }
 

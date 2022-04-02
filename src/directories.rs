@@ -51,7 +51,8 @@ pub fn sanitize_webdav_path(system_file_path: &str) -> String {
         .take(index + 2)
         .rev()
         .collect::<Vec<&str>>()
-        .join("/");
+        .join("/")
+        .replace("~", "");
 
     webdav_path
 }

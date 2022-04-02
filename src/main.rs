@@ -61,7 +61,9 @@ async fn manage(filepath: &str) {
                             webdav_client_clone.create_directory(&sanitized_webdav_path);
                         }
                     },
-                    Ok(DebouncedEvent::Remove(path)) => println!("delete {}", path.to_str().unwrap()),
+                    Ok(DebouncedEvent::Remove(path)) => {
+                        webdav_client_clone.delete(&directories::sanitize_webdav_path(path.to_str().unwrap()));
+                    },
                     Ok(_event) => {},
                     Err(e) => println!("err {:?}", e)
                 }
