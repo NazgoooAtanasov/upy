@@ -44,7 +44,6 @@ impl WebdavClient {
         );
 
         let client = reqwest::blocking::Client::new();
-        println!("{}", url);
         let res = client.put(url)
             .basic_auth(self.config.as_ref().unwrap().username.clone(), Some(self.config.as_ref().unwrap().password.clone()))
             .body(file_fd)
@@ -117,6 +116,23 @@ impl WebdavClient {
             .unwrap()
             .text()
             .await
+            .unwrap();
+    }
+
+    pub fn create_directory(&self, directory_path: &str) {
+        let url = format!(
+            "https://{}/on/demandware.servlet/webdav/Sites/Cartridges/{}/{}",
+            self.config.as_ref().unwrap().hostname,
+            self.config.as_ref().unwrap().version,
+            directory_path
+        );
+
+        let client = reqwest::blocking::Client::new();
+        let _response = client.request(reqwest::Method::from_bytes(b"MKCOL").expect("Could not generate MKCOL method"), url)
+            .basic_auth(self.config.as_ref().unwrap().username.clone(), Some(self.config.as_ref().unwrap().password.clone()))
+            .send()
+            .unwrap()
+            .text()
             .unwrap();
     }
 

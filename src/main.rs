@@ -16,7 +16,6 @@ async fn manage(filepath: &str) {
 
     let mut webdav_client = webdav::WebdavClient::new();
     webdav_client.set_config(format!("{}/dw.json", filepath).as_str());
-    println!("{}", webdav_client.config.as_ref().unwrap().version);
 
     let mut cartridges_metadata: HashMap<String, String> = HashMap::new();
 
@@ -51,10 +50,16 @@ async fn manage(filepath: &str) {
             loop {
                 match rx.recv() {
                     Ok(DebouncedEvent::Write(path)) | Ok(DebouncedEvent::Create(path)) => {
-                        webdav_client_clone.upload_file_blocking(
-                            path.to_str().unwrap(),
-                            &directories::sanitize_webdav_path(path.to_str().unwrap())
-                        );
+                        let sanitized_webdav_path = directories::sanitize_webdav_path(path.to_str().unwrap());
+
+                        if sanitized_webdav_path.contains(".") {
+                            webdav_client_clone.upload_file_blocking(
+                                path.to_str().unwrap(),
+                                &sanitized_webdav_path
+                            );
+                        } else {
+                            webdav_client_clone.create_directory(&sanitized_webdav_path);
+                        }
                     },
                     Ok(DebouncedEvent::Remove(path)) => println!("delete {}", path.to_str().unwrap()),
                     Ok(_event) => {},
