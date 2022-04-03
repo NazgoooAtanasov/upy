@@ -19,9 +19,14 @@ fn manage(filepath: &str) {
 
     let mut cartridges_metadata: HashMap<String, String> = HashMap::new();
 
-    let forbidden_paths: Vec<&str> = vec!["node_modules", "target", "build-suite", "git"];
+    let forbidden_paths: Vec<String> = vec!["node_modules".to_string(), "target".to_string(), "build-suite".to_string(), "git".to_string()];
 
-    let _ = directories::walk_directories(path, &mut cartridges_metadata, &forbidden_paths);
+    let _ = directories::walk_directories(
+        path,
+        &mut cartridges_metadata,
+        &forbidden_paths,
+        &webdav_client
+    );
 
     let mut threads: Vec<std::thread::JoinHandle<()>> = Vec::new();
 
@@ -42,6 +47,7 @@ fn manage(filepath: &str) {
         webdav_client.send_cartridge(&cartridges_parent_path, &name);
 
         let webdav_client_clone = webdav_client.clone();
+        println!("[WATCHER] Starting to watch for changes in [{}]", name);
         let thread = std::thread::spawn(move || {
             let (tx, rx) = channel();
             let mut watcher = watcher(tx, Duration::from_secs(1)).unwrap();

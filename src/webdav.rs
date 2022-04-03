@@ -7,7 +7,8 @@ pub struct Config {
     pub hostname: String,
     pub username: String, 
     pub password: String,
-    pub version: String
+    pub version: String,
+    pub cartridge: Vec<String>
 }
 
 #[derive(Clone)]
@@ -28,7 +29,8 @@ impl WebdavClient {
             hostname: config.hostname,
             username: config.username,
             password: config.password,
-            version: config.version
+            version: config.version,
+            cartridge: config.cartridge
         });
     }
 

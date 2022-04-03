@@ -3,8 +3,10 @@ use std::{
     collections::HashMap
 };
 
-fn check_forbidden(forbidden_paths: &Vec<&str>, path: &str) -> bool {
-    for forbidden_path in forbidden_paths {
+use crate::webdav;
+
+fn check_include(list: &Vec<String>, path: &str) -> bool {
+    for forbidden_path in list {
         if path.contains(forbidden_path) {
             return true;
         } 
@@ -13,10 +15,17 @@ fn check_forbidden(forbidden_paths: &Vec<&str>, path: &str) -> bool {
     return false;
 }
 
-pub fn walk_directories(path: &std::path::Path, cartridges_metadata: &mut HashMap<String, String>, forbidden_paths: &Vec<&str>) -> std::io::Result<()> {
+pub fn walk_directories(
+    path: &std::path::Path,
+    cartridges_metadata: &mut HashMap<String, String>,
+    forbidden_paths: &Vec<String>,
+    webdav_client: &webdav::WebdavClient
+) -> std::io::Result<()>
+{
     let path_str = path.to_str().unwrap();
+    let included_cartridges = webdav_client.config.as_ref().unwrap().cartridge.clone();
 
-    if path.is_dir() && !check_forbidden(&forbidden_paths, path_str) {
+    if path.is_dir() && !check_include(&forbidden_paths, path_str) {
         for entry in fs::read_dir(path)? {
             let entry = entry?;
             let entry_path = entry.path();
@@ -28,11 +37,13 @@ pub fn walk_directories(path: &std::path::Path, cartridges_metadata: &mut HashMa
                     .split("/")
                     .last();
 
-                cartridges_metadata.insert(cartridge_name.unwrap().to_string(), path.to_str().unwrap().to_string());
-                continue;
+                if check_include(&included_cartridges, path_str) {
+                    cartridges_metadata.insert(cartridge_name.unwrap().to_string(), path.to_str().unwrap().to_string());
+                    continue;
+                }
             }
 
-            let _ = walk_directories(&entry_path, cartridges_metadata, forbidden_paths);
+            let _ = walk_directories(&entry_path, cartridges_metadata, forbidden_paths, webdav_client);
         }
     }
 
