@@ -1,3 +1,4 @@
+use std::collections;
 use crate::webdav;
 
 pub fn parse_config(config_file: &str) -> webdav::Config {
@@ -6,3 +7,25 @@ pub fn parse_config(config_file: &str) -> webdav::Config {
 
     config
 } 
+
+
+
+pub fn parse_args(args: &Vec<String>) -> collections::HashMap<&str, String> {
+    // path
+    // flags
+    let mut arguments = collections::HashMap::new();
+
+    if args.len() <= 1 {
+        panic!("No path provided");
+    }
+    
+    arguments.insert("path", args[1].clone());
+
+    let s: Vec<&String> = args.iter().skip(2).collect();
+
+    for q in s {
+        println!("{}", q);
+    }
+
+    arguments
+}

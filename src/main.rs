@@ -1,11 +1,11 @@
 use std::{
+    sync::mpsc::channel,
+    time::Duration,
     collections::HashMap,
-    process::Command
+    process::Command,
+    env
 };
-
 use notify::{Watcher, RecursiveMode, watcher, DebouncedEvent};
-use std::sync::mpsc::channel;
-use std::time::Duration;
 
 mod webdav;
 mod parser;
@@ -88,8 +88,10 @@ fn manage(filepath: &str) {
 }
 
 fn main() {
-    let args: Vec<String> = std::env::args().collect();
+    let args: Vec<String> = env::args().collect();
     let filepath = &args[1];
 
-    manage(filepath);
+    let arguments: HashMap<&str, String> = parser::parse_args(&args);
+
+    // manage(filepath);
 }
