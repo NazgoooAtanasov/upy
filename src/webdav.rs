@@ -100,5 +100,9 @@ impl WebdavClient {
         self.unzip_zip(format!("{}.zip", &name).as_str());
 
         self.delete(format!("{}.zip", &name).as_str());
+
+        let _removef = std::fs::remove_file(
+            format!("{}/{}.zip", &cartridges_parent_path, &name)
+        ).unwrap();
     }
 }
