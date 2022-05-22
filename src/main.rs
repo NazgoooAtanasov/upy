@@ -72,6 +72,17 @@ fn manage(filepath: &str) {
                         let sanitized_webdav_path = directories::sanitize_webdav_path(path.to_str().unwrap());
                         println!("[DELETION] Deleting [{}]", sanitized_webdav_path);
                         webdav_client_clone.delete(&sanitized_webdav_path);
+                    }
+                    Ok(DebouncedEvent::Rename(source, dest)) => {
+                        let sanitized_webdav_path_source = directories::sanitize_webdav_path(source.to_str().unwrap());
+                        let sanitized_webdav_path_dest = directories::sanitize_webdav_path(dest.to_str().unwrap());
+
+                        println!("[MOVE] Moving [{}] -> [{}]", sanitized_webdav_path_source, sanitized_webdav_path_dest);
+                        webdav_client_clone.delete(&sanitized_webdav_path_source);
+                        webdav_client_clone.upload_file(
+                            dest.to_str().unwrap(),
+                            &sanitized_webdav_path_dest
+                        );
                     },
                     Ok(_event) => {},
                     Err(e) => println!("err {:?}", e)
