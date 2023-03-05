@@ -1,8 +1,10 @@
+// @TODO: research the `Result` return type, in order to use the `?` instead of constantly unsing unwraps
+// @TODO: create a sane way of not looking into common directories like `node_modules`, `.git`, etc.
 use std::collections::HashMap;
 use std::fs;
 use std::path;
 use std::io::{Read, Write};
-use serde::{Deserialize};
+use serde::Deserialize;
 use tokio_util::codec::{FramedRead, BytesCodec};
 
 type Cartridges = Vec<String>;
@@ -186,8 +188,8 @@ impl ZipHanlder {
                 .clone(); // ???
 
             // check for outdirs existance before writing to it
-            let zip_file_paht_str = String::from(format!("{}/{}.zip", self.output_dir, cartridge_name));
-            let zip_file_path = path::Path::new(zip_file_paht_str.as_str());
+            let zip_file_path_str = String::from(format!("{}/{}.zip", self.output_dir, cartridge_name));
+            let zip_file_path = path::Path::new(zip_file_path_str.as_str());
             let zip_file = fs::File::create(zip_file_path).unwrap();
             let mut zip = zip::ZipWriter::new(zip_file);
 
@@ -196,7 +198,7 @@ impl ZipHanlder {
 
             if let Ok(entries) = dir_entries {
                 self.zip_entries(&mut zip, &self.options, &String::from(cartridge_name), &cartridge, entries)?;
-                self.zip_files.insert(String::from(cartridge_name), cartridge.clone());
+                self.zip_files.insert(String::from(cartridge_name), zip_file_path_str);
                 zip.finish().unwrap();
             }
         }
@@ -268,20 +270,40 @@ impl Demandware {
             let body = reqwest::Body::wrap_stream(stream);
 
             request(self, reqwest::Method::PUT, format!("{name}.zip"))
-            .body(body)
-            .send()
+                .body(body)
+                .send()
             .await?;
         }
         return Ok(self);
     }
 
-    fn remote_unpzip(&self) -> &Self {
-        return self;
+    async fn remote_unpzip(&self) -> Result<&Self, reqwest::Error> {
+        let mut unzip_method = HashMap::new();
+        unzip_method.insert("method", "UNZIP");
+
+        for (name, _path) in &self.zip_files {
+            request(self, reqwest::Method::POST, format!("{name}.zip"))
+                .form(&unzip_method)
+                .send()
+            .await?;
+        }
+
+        return Ok(self);
+    }
+
+    async fn remote_remove_zip(&self) -> Result<&Self, reqwest::Error> {
+        for (name, _path) in &self.zip_files {
+            request(self, reqwest::Method::DELETE, format!("{name}.zip"))
+                .send()
+            .await?;
+        }
+
+        return Ok(self);
     }
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let uploader: Uploader = Uploader::new()
         .parse_args(std::env::args())
         .set_flags()
@@ -289,13 +311,17 @@ async fn main() {
 
     let zip_handler: ZipHanlder = ZipHanlder::new()
         .reset_outdir()
-        .zip(&uploader.cartridges).unwrap();
+        .zip(&uploader.cartridges)?;
 
     let _demandware = Demandware::new(zip_handler.zip_files)
         .parse_config()
         .remote_clear()
         .send_to_remote()
-        .await
-        .unwrap();
-        // .remote_unpzip();
+        .await?
+        .remote_unpzip()
+        .await?
+        .remote_remove_zip()
+        .await?;
+
+    return Ok(());
 }
