@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use std::fs;
 use std::path;
 use std::io::{Read, Write};
+use serde::{Deserialize};
+use tokio_util::codec::{FramedRead, BytesCodec};
 
 type Cartridges = Vec<String>;
 
@@ -156,8 +158,6 @@ impl ZipHanlder {
                 .replace(current_cartridge_path, "");
             name.insert_str(0, current_cartridge_name);
 
-            println!("{name}, {}", path.to_str().unwrap());
-
             if path.is_file() {
                 zip.start_file(name, *options)?;
                 let mut f = fs::File::open(path)?;
@@ -205,13 +205,97 @@ impl ZipHanlder {
     }
 }
 
-fn main() {
+#[derive(Default, Deserialize, Clone)]
+struct DWConfig {
+    hostname: String,
+    username: String,
+    password: String,
+    version: String
+}
+
+#[derive(Clone)]
+struct Demandware {
+    config: DWConfig,
+    zip_files: ZipFiles
+}
+
+fn request(dw: &Demandware, method: reqwest::Method, url: String) -> reqwest::RequestBuilder {
+    let url = format!(
+        "https://{}/on/demandware.servlet/webdav/Sites/Cartridges/{}/{}", 
+        dw.config.hostname,
+        dw.config.version, 
+        url
+    );
+
+    return reqwest::Client::new()
+        .request(method, url)
+        .basic_auth(dw.config.username.clone(), Some(dw.config.password.clone()));
+}
+
+impl Demandware {
+    fn new(zip_files: ZipFiles) -> Self {
+        return Self {
+            config: DWConfig::default(),
+            zip_files
+        }
+    }
+
+    fn parse_config(mut self) -> Self {
+        let dw_config = fs::read_to_string("./dw.json");
+
+        if let Err(err) = dw_config {
+            panic!("Can not read config file, {}", err);
+        }
+
+        let config: Result<DWConfig, serde_json::Error> = serde_json::from_str(dw_config.unwrap().as_str());
+
+        if let Err(err) = config {
+            panic!("Can not parse config file, {}", err);
+        }
+
+        self.config = config.unwrap();
+        return self;
+    }
+
+    fn remote_clear(&self) -> &Self {
+        return self;
+    }
+
+    async fn send_to_remote(&self) -> Result<&Self, reqwest::Error> {
+        for (name, path) in &self.zip_files {
+            let file_fd = tokio::fs::File::open(path).await.unwrap();
+            let stream = FramedRead::new(file_fd, BytesCodec::new());
+            let body = reqwest::Body::wrap_stream(stream);
+
+            request(self, reqwest::Method::PUT, format!("{name}.zip"))
+            .body(body)
+            .send()
+            .await?;
+        }
+        return Ok(self);
+    }
+
+    fn remote_unpzip(&self) -> &Self {
+        return self;
+    }
+}
+
+#[tokio::main]
+async fn main() {
     let uploader: Uploader = Uploader::new()
         .parse_args(std::env::args())
         .set_flags()
         .set_cartridges();
 
-    let _zip_handler: ZipHanlder = ZipHanlder::new()
+    let zip_handler: ZipHanlder = ZipHanlder::new()
         .reset_outdir()
         .zip(&uploader.cartridges).unwrap();
+
+    let _demandware = Demandware::new(zip_handler.zip_files)
+        .parse_config()
+        .remote_clear()
+        .send_to_remote()
+        .await
+        .unwrap();
+        // .remote_unpzip();
 }
