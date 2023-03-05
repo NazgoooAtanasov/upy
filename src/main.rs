@@ -3,9 +3,10 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path;
-use std::io::{Read, Write};
+use std::thread;
+use std::sync;
 use serde::Deserialize;
-use tokio_util::codec::{FramedRead, BytesCodec};
+use std::io::{Read, Write};
 
 type Cartridges = Vec<String>;
 
@@ -218,10 +219,9 @@ struct DWConfig {
 #[derive(Clone)]
 struct Demandware {
     config: DWConfig,
-    zip_files: ZipFiles
 }
 
-fn request(dw: &Demandware, method: reqwest::Method, url: String) -> reqwest::RequestBuilder {
+fn request(dw: &Demandware, method: reqwest::Method, url: String) -> reqwest::blocking::RequestBuilder {
     let url = format!(
         "https://{}/on/demandware.servlet/webdav/Sites/Cartridges/{}/{}", 
         dw.config.hostname,
@@ -229,20 +229,24 @@ fn request(dw: &Demandware, method: reqwest::Method, url: String) -> reqwest::Re
         url
     );
 
-    return reqwest::Client::new()
+    return reqwest::blocking::Client::new()
         .request(method, url)
         .basic_auth(dw.config.username.clone(), Some(dw.config.password.clone()));
 }
 
 impl Demandware {
-    fn new(zip_files: ZipFiles) -> Self {
-        return Self {
+    fn new() -> Self {
+        let mut s = Self {
             config: DWConfig::default(),
-            zip_files
-        }
+        };
+
+        s.parse_config();
+        // s.remote_clear(); @TODO: implement remote_clear
+
+        return s;
     }
 
-    fn parse_config(mut self) -> Self {
+    fn parse_config(&mut self) -> &Self {
         let dw_config = fs::read_to_string("./dw.json");
 
         if let Err(err) = dw_config {
@@ -259,51 +263,36 @@ impl Demandware {
         return self;
     }
 
-    fn remote_clear(&self) -> &Self {
-        return self;
+    fn remote_send_zip(&self, path: String, name: String) -> Result<(), reqwest::Error> {
+        let file_fd = fs::File::open(path).unwrap();
+        request(self, reqwest::Method::PUT, format!("{}.zip", name))
+            .body(file_fd)
+            .send()?;
+        return Ok(());
     }
 
-    async fn send_to_remote(&self) -> Result<&Self, reqwest::Error> {
-        for (name, path) in &self.zip_files {
-            let file_fd = tokio::fs::File::open(path).await.unwrap();
-            let stream = FramedRead::new(file_fd, BytesCodec::new());
-            let body = reqwest::Body::wrap_stream(stream);
-
-            request(self, reqwest::Method::PUT, format!("{name}.zip"))
-                .body(body)
-                .send()
-            .await?;
-        }
-        return Ok(self);
+    fn remote_unzip(&self, name: String) -> Result<(), reqwest::Error> {
+        let mut body = HashMap::new();
+        body.insert("method", "UNZIP");
+        request(self, reqwest::Method::POST, format!("{}.zip", name))
+            .form(&body)
+            .send()?;
+        return Ok(());
     }
 
-    async fn remote_unpzip(&self) -> Result<&Self, reqwest::Error> {
-        let mut unzip_method = HashMap::new();
-        unzip_method.insert("method", "UNZIP");
-
-        for (name, _path) in &self.zip_files {
-            request(self, reqwest::Method::POST, format!("{name}.zip"))
-                .form(&unzip_method)
-                .send()
-            .await?;
-        }
-
-        return Ok(self);
+    fn remote_remove(&self, name: String) -> Result<(), reqwest::Error> {
+        request(self, reqwest::Method::DELETE, format!("{}.zip", name))
+            .send()?;
+        return Ok(());
     }
 
-    async fn remote_remove_zip(&self) -> Result<&Self, reqwest::Error> {
-        for (name, _path) in &self.zip_files {
-            request(self, reqwest::Method::DELETE, format!("{name}.zip"))
-                .send()
-            .await?;
-        }
-
-        return Ok(self);
-    }
+    // @TODO: implement remote_clear
+    // fn remote_clear(&self) -> &Self {
+    //     return self;
+    // }
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let uploader: Uploader = Uploader::new()
         .parse_args(std::env::args())
         .set_flags()
@@ -313,15 +302,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .reset_outdir()
         .zip(&uploader.cartridges)?;
 
-    let _demandware = Demandware::new(zip_handler.zip_files)
-        .parse_config()
-        .remote_clear()
-        .send_to_remote()
-        .await?
-        .remote_unpzip()
-        .await?
-        .remote_remove_zip()
-        .await?;
+    let demandware = sync::Arc::new(Demandware::new());
+    let mut running_threads: Vec<thread::JoinHandle<Result<(), reqwest::Error>>> = Vec::new();
+
+    for (name, path) in zip_handler.zip_files {
+        let demandware = sync::Arc::clone(&demandware);
+
+        running_threads.push(thread::spawn(move || {
+            // upload
+            demandware.remote_send_zip(path.clone(), name.clone())?;
+
+            // unzip
+            demandware.remote_unzip(name.clone())?;
+
+            // delete
+            demandware.remote_remove(name.clone())?;
+
+            return Ok(());
+        }));
+    }
+
+    for t in running_threads {
+        t.join().unwrap()?;
+    }
 
     return Ok(());
 }
