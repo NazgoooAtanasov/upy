@@ -7,6 +7,7 @@ use std::thread;
 use std::sync;
 use serde::Deserialize;
 use std::io::{Read, Write};
+use notify::{RecursiveMode, Watcher, event};
 
 type Cartridges = Vec<String>;
 
@@ -286,10 +287,119 @@ impl Demandware {
         return Ok(());
     }
 
+    fn remove_file(&self, name: String) -> Result<(), reqwest:: Error> {
+        if let Some(normalized_path) = self.get_normalized_webdav_path(&name) {
+            request(self, reqwest::Method::DELETE, normalized_path)
+                .send()?;
+        }
+
+        return Ok(());
+    }
+
+    fn send_file(&self, name: String) -> Result<(), reqwest:: Error> {
+        if let Some(normalized_path) = self.get_normalized_webdav_path(&name) {
+            if let Ok(fd) = fs::File::open(name) {
+                request(self, reqwest::Method::PUT, normalized_path)
+                    .body(fd)
+                    .send()?;
+            }
+        }
+        return Ok(());
+    }
+
+    fn get_normalized_webdav_path(&self, path: &String) -> Option<String> {
+        // ./cartridges/app_anything/cartridge/controllers/Account.js
+        let mut path_split = path.split('/'); // check for OS wide path separator
+        let cartridge_literal_idx = path_split.position(|x| x.contains("cartridge"));
+
+        if let Some(idx) = cartridge_literal_idx {
+            let idx = idx - 1;
+            let normalized = path_split.take(idx).collect::<Vec<_>>().join("/");
+            return Some(normalized);
+        } else {
+            return None;
+        }
+    }
+
     // @TODO: implement remote_clear
     // fn remote_clear(&self) -> &Self {
     //     return self;
     // }
+}
+
+struct DemandwareHandler {
+    demandware: sync::Arc<Demandware>
+}
+
+impl DemandwareHandler {
+    fn new() -> Self {
+        return Self {
+            demandware: sync::Arc::new(Demandware::new())
+        };
+    }
+
+    fn send_version(&self, zip_files: ZipFiles) -> Result<&Self, reqwest::Error> {
+        let mut running_threads: Vec<thread::JoinHandle<Result<(), reqwest::Error>>> = Vec::new();
+
+        for (name, path) in zip_files {
+            let demandware = sync::Arc::clone(&self.demandware);
+
+            running_threads.push(thread::spawn(move || {
+                // upload
+                demandware.remote_send_zip(path.clone(), name.clone())?;
+
+                // unzip
+                demandware.remote_unzip(name.clone())?;
+
+                // delete
+                demandware.remote_remove(name.clone())?;
+
+                return Ok(());
+            }));
+        }
+
+        for t in running_threads {
+            t.join().unwrap()?;
+        }
+
+        return Ok(self);
+    }
+
+    fn watch_files(&self, working_dir: &String) -> Result<(), notify::Error> {
+        let demandware = sync::Arc::clone(&self.demandware);
+        let mut watcher = notify::recommended_watcher(move |res: Result<notify::Event, notify::Error>| {
+            let demandware = sync::Arc::clone(&demandware);
+
+            let _thread: thread::JoinHandle<Result<(), reqwest::Error>> = thread::spawn(move || {
+                if let Ok(event) = res {
+                    match event.kind {
+                        event::EventKind::Modify(event::ModifyKind::Data(_)) | event::EventKind::Create(event::CreateKind::File) => {
+                            for path in event.paths {
+                                demandware.send_file(path.to_str().unwrap().to_string())?;
+                            }
+                        }
+                        event::EventKind::Remove(event::RemoveKind::File) | event::EventKind::Remove(event::RemoveKind::Folder) => {
+                            for path in event.paths {
+                                demandware.remove_file(path.to_str().unwrap().to_string())?;
+                            }
+                        }
+                        _ => {}
+                    }
+                } else {
+                    eprintln!("There was an error capturing file system event.");
+                }
+
+                return Ok(());
+            });
+        })?;
+
+        watcher.watch(
+            path::Path::new(working_dir.as_str()),
+            RecursiveMode::Recursive
+        )?;
+
+        loop {};
+    }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -302,29 +412,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .reset_outdir()
         .zip(&uploader.cartridges)?;
 
-    let demandware = sync::Arc::new(Demandware::new());
-    let mut running_threads: Vec<thread::JoinHandle<Result<(), reqwest::Error>>> = Vec::new();
-
-    for (name, path) in zip_handler.zip_files {
-        let demandware = sync::Arc::clone(&demandware);
-
-        running_threads.push(thread::spawn(move || {
-            // upload
-            demandware.remote_send_zip(path.clone(), name.clone())?;
-
-            // unzip
-            demandware.remote_unzip(name.clone())?;
-
-            // delete
-            demandware.remote_remove(name.clone())?;
-
-            return Ok(());
-        }));
-    }
-
-    for t in running_threads {
-        t.join().unwrap()?;
-    }
+    let _demandware_handler = DemandwareHandler::new()
+        .send_version(zip_handler.zip_files)?
+        .watch_files(&uploader.working_dir)?;
 
     return Ok(());
 }
