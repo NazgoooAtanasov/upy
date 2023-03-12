@@ -1,13 +1,23 @@
 // @TODO: research the `Result` return type, in order to use the `?` instead of constantly unsing unwraps
 // @TODO: create a sane way of not looking into common directories like `node_modules`, `.git`, etc.
-use std::collections::HashMap;
 use std::fs;
 use std::path;
 use std::thread;
 use std::sync;
 use serde::Deserialize;
 use std::io::{Read, Write};
+use std::collections::HashMap;
 use notify::{RecursiveMode, Watcher, event};
+
+trait Loggable {
+    fn log_err(&self, message: &str) {
+        println!("[ERR]: {message}");
+    }
+
+    fn log_info(&self, message: &str) {
+        println!("[INFO]: {message}");
+    }
+}
 
 type Cartridges = Vec<String>;
 
@@ -18,6 +28,8 @@ struct Uploader {
     arguments: HashMap<String, String>,
     cartridges: Cartridges
 }
+
+impl Loggable for Uploader{}
 
 impl Uploader {
     fn new() -> Self {
@@ -124,6 +136,8 @@ struct ZipHanlder {
     output_dir: String
 }
 
+impl Loggable for ZipHanlder{}
+
 impl ZipHanlder {
     fn new() -> Self {
         return Self {
@@ -222,6 +236,8 @@ struct Demandware {
     config: DWConfig,
 }
 
+impl Loggable for Demandware {}
+
 fn request(dw: &Demandware, method: reqwest::Method, url: String) -> reqwest::blocking::RequestBuilder {
     let url = format!(
         "https://{}/on/demandware.servlet/webdav/Sites/Cartridges/{}/{}", 
@@ -265,6 +281,7 @@ impl Demandware {
     }
 
     fn remote_send_zip(&self, path: String, name: String) -> Result<(), reqwest::Error> {
+        self.log_info(format!("Sending \"{}\" cartridge zip.", name).as_str());
         let file_fd = fs::File::open(path).unwrap();
         request(self, reqwest::Method::PUT, format!("{}.zip", name))
             .body(file_fd)
@@ -273,6 +290,7 @@ impl Demandware {
     }
 
     fn remote_unzip(&self, name: String) -> Result<(), reqwest::Error> {
+        self.log_info(format!("Unziping \"{}\" cartridge zip.", name).as_str());
         let mut body = HashMap::new();
         body.insert("method", "UNZIP");
         request(self, reqwest::Method::POST, format!("{}.zip", name))
@@ -289,6 +307,7 @@ impl Demandware {
 
     fn remove_file(&self, name: String) -> Result<(), reqwest:: Error> {
         if let Some(normalized_path) = self.get_normalized_webdav_path(&name) {
+            self.log_info(format!("Deleting \"{}\"", normalized_path).as_str());
             request(self, reqwest::Method::DELETE, normalized_path)
                 .send()?;
         }
@@ -299,6 +318,7 @@ impl Demandware {
     fn send_file(&self, name: String) -> Result<(), reqwest:: Error> {
         if let Some(normalized_path) = self.get_normalized_webdav_path(&name) {
             if let Ok(fd) = fs::File::open(name) {
+                self.log_info(format!("Updating \"{}\"", normalized_path).as_str());
                 request(self, reqwest::Method::PUT, normalized_path)
                     .body(fd)
                     .send()?;
