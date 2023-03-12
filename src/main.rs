@@ -1,5 +1,4 @@
 // @TODO: research the `Result` return type, in order to use the `?` instead of constantly unsing unwraps
-// @TODO: create a sane way of not looking into common directories like `node_modules`, `.git`, etc.
 use std::fs;
 use std::path;
 use std::thread;
@@ -9,6 +8,7 @@ use std::time::Instant;
 use std::io::{Read, Write};
 use std::collections::HashMap;
 use notify::{RecursiveMode, Watcher, event};
+
 
 trait Loggable {
     fn log_err(&self, message: &str) {
@@ -94,6 +94,14 @@ impl Uploader {
 
     fn get_cartridges(&self, working_dir: String) -> Cartridges {
         let mut cartridges = Cartridges::default();
+
+        let ignore_paths: Vec<&str> = vec![".git", "node_modules", "build-suite"];
+        for path in ignore_paths {
+            if working_dir.contains(path) {
+                self.log_info(format!("Ignoring current path {working_dir}, ignored by {path}").as_str());
+                return cartridges;
+            }
+        }
 
         let is_project = fs::read_dir(path::Path::new(&working_dir))
             .expect(format!("Problem with opening passed dir {}", working_dir).as_str())
