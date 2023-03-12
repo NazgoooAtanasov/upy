@@ -5,6 +5,7 @@ use std::path;
 use std::thread;
 use std::sync;
 use serde::Deserialize;
+use std::time::Instant;
 use std::io::{Read, Write};
 use std::collections::HashMap;
 use notify::{RecursiveMode, Watcher, event};
@@ -351,6 +352,8 @@ struct DemandwareHandler {
     demandware: sync::Arc<Demandware>
 }
 
+impl Loggable for DemandwareHandler {}
+
 impl DemandwareHandler {
     fn new() -> Self {
         return Self {
@@ -359,6 +362,8 @@ impl DemandwareHandler {
     }
 
     fn send_version(&self, zip_files: ZipFiles) -> Result<&Self, reqwest::Error> {
+        let now = Instant::now();
+
         let mut running_threads: Vec<thread::JoinHandle<Result<(), reqwest::Error>>> = Vec::new();
 
         for (name, path) in zip_files {
@@ -382,11 +387,14 @@ impl DemandwareHandler {
             t.join().unwrap()?;
         }
 
+        let elapsed = now.elapsed();
+        self.log_info(format!("Code versoion uploaded for {:.2?}", elapsed).as_str());
         return Ok(self);
     }
 
     fn watch_files(&self, working_dir: &String) -> Result<(), notify::Error> {
         let demandware = sync::Arc::clone(&self.demandware);
+        self.log_info(format!("Starting file watcher.").as_str());
         let mut watcher = notify::recommended_watcher(move |res: Result<notify::Event, notify::Error>| {
             let demandware = sync::Arc::clone(&demandware);
 
@@ -418,7 +426,8 @@ impl DemandwareHandler {
             RecursiveMode::Recursive
         )?;
 
-        loop {};
+        thread::sleep(std::time::Duration::MAX);
+        return Ok(());
     }
 }
 
