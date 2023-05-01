@@ -4,7 +4,7 @@ use std::path;
 use std::thread;
 use std::sync;
 use serde::Deserialize;
-use std::time::Instant;
+use std::time::{Instant, Duration};
 use std::io::{Read, Write};
 use std::collections::HashMap;
 use notify::{RecursiveMode, Watcher, event};
@@ -20,7 +20,7 @@ trait Loggable {
     }
 }
 
-type Cartridges = Vec<String>;
+type Cartridges = HashMap<String, String>;
 
 struct Uploader {
     f_watch: bool,
@@ -113,7 +113,14 @@ impl Uploader {
             });
 
         if is_project {
-            cartridges.push(working_dir);
+            let cartridge_name = working_dir
+                .split("/")
+                .collect::<Vec<&str>>()
+                .last()
+                .unwrap()
+                .clone(); // ???
+
+            cartridges.insert(cartridge_name.to_string(), working_dir);
         } else {
             fs::read_dir(path::Path::new(&working_dir)) // refetching the whole dir for now. research how to reuse an iterator for above an here.
                 .expect(format!("Problem with opening passed dir {}", working_dir).as_str())
@@ -124,7 +131,9 @@ impl Uploader {
                     return x.path().is_dir();
                 })
                 .for_each(|x| {
-                    cartridges.append(&mut self.get_cartridges(x.path().to_str().unwrap().to_string()));
+                    cartridges
+                        .extend(self.get_cartridges(x.path().to_str().unwrap().to_string()));
+                    // cartridges.append(&mut self.get_cartridges(x.path().to_str().unwrap().to_string()));
                 });
         }
 
@@ -204,14 +213,7 @@ impl ZipHanlder {
     }
 
     fn zip(mut self, cartridges: &Cartridges) -> zip::result::ZipResult<Self> {
-        for cartridge in cartridges.iter() {
-            let cartridge_name = cartridge
-                .split("/")
-                .collect::<Vec<&str>>()
-                .last()
-                .unwrap()
-                .clone(); // ???
-
+        for (cartridge_name, cartridge) in cartridges.iter() {
             // check for outdirs existance before writing to it
             let zip_file_path_str = String::from(format!("{}/{}.zip", self.output_dir, cartridge_name));
             let zip_file_path = path::Path::new(zip_file_path_str.as_str());
@@ -232,17 +234,18 @@ impl ZipHanlder {
     }
 }
 
-#[derive(Default, Deserialize, Clone)]
+#[derive(Default, Deserialize, Clone, Debug)]
 struct DWConfig {
     hostname: String,
     username: String,
     password: String,
-    version: String
+    version: String,
+    cartridge: Vec<String>
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 struct Demandware {
-    config: DWConfig,
+    config: DWConfig
 }
 
 impl Loggable for Demandware {}
@@ -257,7 +260,8 @@ fn request(dw: &Demandware, method: reqwest::Method, url: String) -> reqwest::bl
 
     return reqwest::blocking::Client::new()
         .request(method, url)
-        .basic_auth(dw.config.username.clone(), Some(dw.config.password.clone()));
+        .basic_auth(dw.config.username.clone(), Some(dw.config.password.clone()))
+        .timeout(Duration::from_secs(3 * 60));
 }
 
 impl Demandware {
@@ -448,6 +452,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let zip_handler: ZipHanlder = ZipHanlder::new()
         .reset_outdir()
         .zip(&uploader.cartridges)?;
+
 
     let _demandware_handler = DemandwareHandler::new()
         .send_version(zip_handler.zip_files)?
